@@ -16,9 +16,12 @@ import itertools
 from typing import Pattern, AnyStr, List
 import curses
 import ssl
+import argparse
 
 print_ping_error_message = False   # initialize flag variable
 openssl_is_active = False
+
+parser = argparse.ArgumentParser(description="Cloudflare's IP Scanner in Python")  # Create argument parser instance
 
 try:
     import ping3
@@ -28,10 +31,6 @@ except ImportError:
 
 # Main function
 def main():
-
-    # Check for custom config file in command-line arguments
-    customconfig = False if len(sys.argv) <= 1 else os.path.exists(sys.argv[1])
-
     DEFAULT_MAX_IP = 50
     DEFAULT_MAX_PING = 500
     DEFAULT_MAX_JITTER = 100
@@ -42,9 +41,27 @@ def main():
     DEFAULT_MIN_DOWNLOAD_SPEED = 3
     DEFAULT_MIN_UPLOAD_SPEED = 0.2
 
+    # Create a CLI to the values from command line
+    parser.add_argument("--custom-config", type=str, help="Path to the custom config file")
+    parser.add_argument("--max-ip", type=int, help=f"Specify max IP [{DEFAULT_MAX_IP}]: ", default=DEFAULT_MAX_IP)
+    parser.add_argument("--max-ping", type=int, help=f"Specify max Ping [{DEFAULT_MAX_PING}]: ", default=DEFAULT_MAX_PING)
+    parser.add_argument("--max-jitter", type=int, help=f"Specify max Jitter [{DEFAULT_MAX_JITTER}]: ", default=DEFAULT_MAX_JITTER)
+    parser.add_argument("--max-latency", type=int, help=f"Specify max Latency [{DEFAULT_MAX_LATENCY}]: ", default=DEFAULT_MAX_LATENCY)
+    parser.add_argument("--ip-include", type=str, help=f"Specify IPs to include (comma seperated, '-' to ignore) [{DEFAULT_IP_INCLUDE}]: ", default=DEFAULT_IP_INCLUDE)
+    parser.add_argument("--ip-exclude", type=str, help=f"Specify IPs to exclude (comma seperated, '-' to ignore) [{DEFAULT_IP_EXCLUDE}]: ", default=DEFAULT_IP_EXCLUDE)
+    parser.add_argument("--test-size", type=int, help=f"Specify test data size in KB [{DEFAULT_DOWNLOAD_SIZE_KB}]: ", default=DEFAULT_DOWNLOAD_SIZE_KB)
+    parser.add_argument("--min-download-speed", type=int, help=f"Specify minimum download speed (Mbps) [{DEFAULT_MIN_DOWNLOAD_SPEED}]: ", default=DEFAULT_MIN_DOWNLOAD_SPEED)
+    parser.add_argument("--min-upload-speed", type=int, help=f"Specify minimum upload speed (Mbps) [{DEFAULT_MIN_UPLOAD_SPEED}]: ", default=DEFAULT_MIN_UPLOAD_SPEED)
+    parser.add_argument("--cf-email", type=str, help=f"Specify CloudFlare email")
+    parser.add_argument("--cf-zone-id", type=str, help=f"Specify CloudFlare zone ID")
+    parser.add_argument("--cf-api-key", type=str, help=f"Specify CloudFlare API key")
+    parser.add_argument("--cf-sub-domain", type=str, help=f"Specify you active sub domain in CloudFlare")
+    parser.add_argument("--cf-delete-extisting-record", action="store_true", default=False, help="delete extisting records of given subdomain before uploading the result to your Cloudflare(yes/no)(defaults to no)")
+    args = parser.parse_args()
+
     # Create a new configparser instance and load the configuration file
     config = configparser.ConfigParser()
-    config.read(sys.argv[1] if customconfig else 'config.ini')
+    config.read(args.custom_config if args.custom_config else 'config.ini')
 
     # Get the values of the configuration variables, using default values if not available
     max_ip = int(config.get('DEFAULT', 'max_ip', fallback=DEFAULT_MAX_IP))
@@ -78,20 +95,17 @@ def main():
 
 
     try:
-
         # If no custom config file was specified...
-        if not customconfig:
-
-            # Prompt user for input with default values from configuration file
-            max_ip = input(f"Enter max IP [{max_ip}]: ") or max_ip
-            max_ping = input(f"Enter max ping [{max_ping}]: ") or max_ping
-            max_jitter = input(f"Enter max jitter [{max_jitter}]: ") or max_jitter
-            max_latency = input(f"Enter max latency [{max_latency}]: ") or max_latency
-            ip_include = input(f"Enter IPs to include (comma seperated, '-' to ignore) [{ip_include}]: ") or ip_include
-            ip_exclude = input(f"Enter IPs to exclude (comma seperated, '-' to ignore) [{ip_exclude}]: ") or ip_exclude
-            test_size = input(f"Enter test data size in KB [{test_size}]: ") or test_size
-            min_download_speed = input(f"Enter minimum download speed (Mbps) [{min_download_speed}]: ") or min_download_speed
-            min_upload_speed = input(f"Enter minimum upload speed (Mbps) [{min_upload_speed}]: ") or min_upload_speed
+        if not args.custom_config:
+            max_ip = args.max_ip
+            max_ping = args.max_ping
+            max_jitter = args.max_jitter
+            max_latency = args.max_latency
+            ip_include = args.ip_include
+            ip_exclude = args.ip_exclude
+            test_size = args.test_size
+            min_download_speed = args.min_download_speed
+            min_upload_speed = args.min_upload_speed
 
             # Clear the include regex in case "-" provided by the user
             if ip_include == '-':
@@ -111,18 +125,13 @@ def main():
             min_upload_speed = float(min_upload_speed)
 
 
-            # Prompt the user for whether they want to upload the result to their Cloudflare subdomain
-            upload_results = input(f"Do you want to upload the result to your Cloudflare subdomain (yes/no) [{upload_results}]? ") or upload_results
-
             # Code block to execute if upload_results is 'y' or 'yes'
-            if upload_results.lower() in ["y", "yes"]:
-                delete_existing = input(f"Do you want to delete extisting records of given subdomain before uploading the result to your Cloudflare (yes/no) [{delete_existing}]? ") or delete_existing
-                email = input(f"Cloudflare email [{email}]: ") or email
-                zone_id = input(f"Cloudflare zone ID [{zone_id}]: ") or zone_id
-                api_key = input(f"Cloudflare API key [{api_key}]: ") or api_key
-
-                # Prompt user to enter subdomain to modify
-                subdomain = input(f"Subdomain to modify (i.e ip.my-domain.com) [{subdomain}]: ") or subdomain
+            if args.cf_email and args.cf_zone_id and args.cf_api_key:
+                delete_existing = args.cf_delete_extisting_record
+                email = args.cf_email
+                zone_id = args.cf_zone_id
+                api_key = args.cf_api_key
+                subdomain = args.cf_sub_domain
 
                 # Check if provided credentials are correct and retry if they are not
                 while not validateCloudflareCredentials(email, api_key, zone_id):
